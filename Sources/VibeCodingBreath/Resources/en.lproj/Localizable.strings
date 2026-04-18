@@ -1,0 +1,5 @@
+"status.menu.open" = "Open Breathing";
+"status.menu.quit" = "Quit";
+"breath.phase.inhale" = "Inhale";
+"breath.phase.hold" = "Hold";
+"breath.phase.exhale" = "Exhale";
