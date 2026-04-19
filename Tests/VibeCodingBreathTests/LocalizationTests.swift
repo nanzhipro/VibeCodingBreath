@@ -1,20 +1,40 @@
 import XCTest
-
 @testable import VibeCodingBreath
 
 final class LocalizationTests: XCTestCase {
-  func testStringsResolveInBundle() {
-    let keys = [
-      "status.menu.open",
-      "status.menu.quit",
-      "breath.phase.inhale",
-      "breath.phase.hold",
-      "breath.phase.exhale",
+    private let keys: [String] = [
+        "status.menu.open",
+        "status.menu.quit",
+        "phase.inhale",
+        "phase.hold.afterInhale",
+        "phase.exhale",
+        "phase.hold.afterExhale"
     ]
-    for key in keys {
-      let resolved = String(localized: String.LocalizationValue(key), bundle: .module)
-      XCTAssertNotEqual(resolved, key, "Key '\(key)' did not resolve to a localized string")
-      XCTAssertFalse(resolved.isEmpty, "Key '\(key)' resolved to empty string")
+
+    func testEnglishKeysResolve() throws {
+        try assertAllKeysResolve(in: "en")
     }
-  }
+
+    func testSimplifiedChineseKeysResolve() throws {
+        try assertAllKeysResolve(in: "zh-Hans")
+    }
+
+    private func assertAllKeysResolve(in language: String) throws {
+        let module = AppResources.bundle
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: module.bundlePath)) ?? []
+        let wanted = language.lowercased() + ".lproj"
+        guard let match = contents.first(where: { $0.lowercased() == wanted }),
+              let lproj = Bundle(path: (module.bundlePath as NSString).appendingPathComponent(match)) else {
+            XCTFail("Missing \(language).lproj in module bundle (have: \(contents))")
+            return
+        }
+        for key in keys {
+            let value = lproj.localizedString(forKey: key, value: "__MISSING__", table: nil)
+            XCTAssertNotEqual(
+                value, "__MISSING__",
+                "Localization key '\(key)' missing in \(language)"
+            )
+            XCTAssertFalse(value.isEmpty, "Empty localization for '\(key)' in \(language)")
+        }
+    }
 }

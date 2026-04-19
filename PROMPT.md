@@ -1,6 +1,6 @@
 # One-Shot Prompt
 
-> Feed this prompt to Claude Code (or any comparable coding agent) to regenerate the entire app from scratch.
+> 以下提示词可在 Claude Code（或同等 agent）里一把生成与本仓库等价的 App。
 
 Please implement a macOS menu-bar mindful-breathing companion app called **VibeCodingBreath** (Swift 5.10, macOS 14+, Apple Silicon + Intel universal) with the following requirements:
 

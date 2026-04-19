@@ -1,5 +1,6 @@
-"status.menu.open" = "Open Breathing";
+"status.menu.open" = "Open VibeCodingBreath";
 "status.menu.quit" = "Quit";
-"breath.phase.inhale" = "Inhale";
-"breath.phase.hold" = "Hold";
-"breath.phase.exhale" = "Exhale";
+"phase.inhale" = "Inhale";
+"phase.hold.afterInhale" = "Hold";
+"phase.exhale" = "Exhale";
+"phase.hold.afterExhale" = "Hold";

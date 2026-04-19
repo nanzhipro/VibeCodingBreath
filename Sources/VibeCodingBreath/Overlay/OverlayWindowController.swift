@@ -1,94 +1,102 @@
 import AppKit
 import SwiftUI
 
-/// Owns the overlay panel + hosting view and handles fade in/out animation, screen positioning,
-/// and engine lifecycle.
 @MainActor
-final class OverlayWindowController: OverlayPresenting {
-  private let panel: OverlayPanel
-  private let engine: BreathingEngine
-  private var screenObserver: NSObjectProtocol?
+final class OverlayWindowController: OverlayControlling {
+    private var panel: OverlayPanel?
+    private let engine: BreathingEngine
+    private var screenObservationTask: Task<Void, Never>?
 
-  private(set) var isVisible: Bool = false
-
-  init(engine: BreathingEngine = BreathingEngine()) {
-    self.engine = engine
-    self.panel = OverlayPanel()
-
-    let view = BreathingOverlayView(engine: engine)
-    let hosting = NSHostingView(rootView: view)
-    hosting.frame = NSRect(
-      x: 0, y: 0,
-      width: Constants.maxDiameter + Constants.overlayPadding,
-      height: Constants.maxDiameter + Constants.overlayPadding
-    )
-    panel.contentView = hosting
-    panel.setContentSize(hosting.frame.size)
-
-    screenObserver = NotificationCenter.default.addObserver(
-      forName: NSApplication.didChangeScreenParametersNotification,
-      object: nil,
-      queue: .main
-    ) { [weak self] _ in
-      MainActor.assumeIsolated { self?.repositionIfVisible() }
+    init(engine: BreathingEngine) {
+        self.engine = engine
     }
-  }
 
-  deinit {
-    // Observer cleanup happens via NotificationCenter retaining a weak self in the block.
-  }
-
-  func show() {
-    guard !isVisible else { return }
-    guard let screen = NSScreen.main else {
-      Log.overlay.warning("show() with no main screen; aborting")
-      return
+    func show() {
+        guard let screen = NSScreen.main else {
+            AppLogger.overlay.error("show() aborted: no main screen")
+            return
+        }
+        let p = panel ?? makePanel(on: screen)
+        if panel == nil {
+            panel = p
+            observeScreenChanges()
+        }
+        recenter(on: screen)
+        p.alphaValue = 0
+        p.orderFrontRegardless()
+        engine.start()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = Constants.fadeIn
+            p.animator().alphaValue = 1.0
+        }
     }
-    positionPanel(on: screen)
-    panel.alphaValue = 0
-    panel.orderFrontRegardless()
-    engine.start()
-    isVisible = true
 
-    NSAnimationContext.runAnimationGroup { ctx in
-      ctx.duration = Constants.fadeIn
-      ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-      panel.animator().alphaValue = 1.0
+    func hide() {
+        guard let p = panel else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = Constants.fadeOut
+            p.animator().alphaValue = 0.0
+        }, completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.engine.stop()
+                self.panel?.orderOut(nil)
+            }
+        })
     }
-    Log.overlay.info("overlay shown")
-  }
 
-  func hide() {
-    guard isVisible else { return }
-    isVisible = false
-    let panelRef = panel
-    let engineRef = engine
-    NSAnimationContext.runAnimationGroup(
-      { ctx in
-        ctx.duration = Constants.fadeOut
-        ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        panelRef.animator().alphaValue = 0.0
-      },
-      completionHandler: {
-        // Stop engine and order out only if we are still hidden.
-        engineRef.stop()
-        panelRef.orderOut(nil)
-      })
-    Log.overlay.info("overlay hiding")
-  }
+    func cleanup() {
+        screenObservationTask?.cancel()
+        screenObservationTask = nil
+        engine.stop()
+        panel?.orderOut(nil)
+        panel = nil
+    }
 
-  private func repositionIfVisible() {
-    guard isVisible, let screen = NSScreen.main else { return }
-    positionPanel(on: screen)
-  }
+    private func makePanel(on screen: NSScreen) -> OverlayPanel {
+        let side = Constants.maxDiameter + Constants.overlayPadding
+        let frame = frame(for: side, on: screen)
+        let p = OverlayPanel(contentRect: frame)
+        let hosting = NSHostingView(rootView: BreathingOverlayView(engine: engine))
+        hosting.frame = NSRect(origin: .zero, size: frame.size)
+        hosting.autoresizingMask = [.width, .height]
+        p.contentView = hosting
+        return p
+    }
 
-  private func positionPanel(on screen: NSScreen) {
-    let size = panel.frame.size
-    let frame = screen.frame
-    let origin = NSPoint(
-      x: frame.midX - size.width / 2,
-      y: frame.midY - size.height / 2
-    )
-    panel.setFrameOrigin(origin)
-  }
+    private func recenter(on screen: NSScreen) {
+        guard let p = panel else { return }
+        let side = Constants.maxDiameter + Constants.overlayPadding
+        p.setFrame(frame(for: side, on: screen), display: false)
+    }
+
+    private func frame(for side: CGFloat, on screen: NSScreen) -> NSRect {
+        NSRect(
+            x: screen.frame.midX - side / 2,
+            y: screen.frame.midY - side / 2,
+            width: side,
+            height: side
+        )
+    }
+
+    private func observeScreenChanges() {
+        screenObservationTask?.cancel()
+        screenObservationTask = Task { @MainActor [weak self] in
+            let stream = NotificationCenter.default.notifications(
+                named: NSApplication.didChangeScreenParametersNotification
+            )
+            for await _ in stream {
+                if Task.isCancelled { return }
+                self?.handleScreenChange()
+            }
+        }
+    }
+
+    private func handleScreenChange() {
+        guard let screen = NSScreen.main else {
+            panel?.orderOut(nil)
+            return
+        }
+        recenter(on: screen)
+    }
 }

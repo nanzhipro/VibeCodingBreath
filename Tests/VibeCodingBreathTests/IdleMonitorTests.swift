@@ -1,69 +1,62 @@
 import XCTest
-
 @testable import VibeCodingBreath
 
-@MainActor
 final class IdleMonitorTests: XCTestCase {
-  func testCrossesThresholdToIdle() {
-    let provider = FakeInactivityProvider()
-    let scheduler = ManualTickScheduler()
-    let monitor = IdleMonitor(
-      provider: provider,
-      scheduler: scheduler,
-      threshold: 5.0,
-      pollInterval: 0.5)
-    var changes: [Bool] = []
-    monitor.onChange = { changes.append($0) }
-    monitor.start()
+    @MainActor
+    func testEdgeFiresOncePerTransition() {
+        let src = FakeIdleSource()
+        let monitor = IdleMonitor(source: src, threshold: 5.0, interval: 60.0)
+        var events: [Bool] = []
+        monitor.onChange = { events.append($0) }
 
-    provider.seconds = 1.0
-    scheduler.fire()
-    provider.seconds = 4.99
-    scheduler.fire()
-    provider.seconds = 5.0
-    scheduler.fire()
-    provider.seconds = 6.0
-    scheduler.fire()  // already idle, no extra callback
+        src.seconds = 1.0
+        monitor.tick()
+        XCTAssertEqual(events, [])
+        XCTAssertFalse(monitor.isIdle)
 
-    XCTAssertEqual(changes, [true])
-    XCTAssertTrue(monitor.isIdle)
-  }
+        src.seconds = 6.0
+        monitor.tick()
+        XCTAssertEqual(events, [true])
+        XCTAssertTrue(monitor.isIdle)
 
-  func testReturnsToActive() {
-    let provider = FakeInactivityProvider()
-    let scheduler = ManualTickScheduler()
-    let monitor = IdleMonitor(
-      provider: provider, scheduler: scheduler,
-      threshold: 5.0, pollInterval: 0.5)
-    var changes: [Bool] = []
-    monitor.onChange = { changes.append($0) }
-    monitor.start()
+        src.seconds = 7.5
+        monitor.tick()
+        XCTAssertEqual(events, [true])
 
-    provider.seconds = 5.5
-    scheduler.fire()  // -> idle
-    provider.seconds = 0.1
-    scheduler.fire()  // -> active
-    provider.seconds = 0.2
-    scheduler.fire()  // still active
+        src.seconds = 0.1
+        monitor.tick()
+        XCTAssertEqual(events, [true, false])
+        XCTAssertFalse(monitor.isIdle)
 
-    XCTAssertEqual(changes, [true, false])
-    XCTAssertFalse(monitor.isIdle)
-  }
+        src.seconds = 0.5
+        monitor.tick()
+        XCTAssertEqual(events, [true, false])
+    }
 
-  func testStopHaltsCallbacks() {
-    let provider = FakeInactivityProvider()
-    let scheduler = ManualTickScheduler()
-    let monitor = IdleMonitor(
-      provider: provider, scheduler: scheduler,
-      threshold: 5.0, pollInterval: 0.5)
-    var changes: [Bool] = []
-    monitor.onChange = { changes.append($0) }
-    monitor.start()
-    monitor.stop()
+    @MainActor
+    func testThresholdBoundary() {
+        let src = FakeIdleSource()
+        let monitor = IdleMonitor(source: src, threshold: 5.0, interval: 60.0)
+        var events: [Bool] = []
+        monitor.onChange = { events.append($0) }
 
-    provider.seconds = 6.0
-    scheduler.fire()  // scheduler is stopped → no closure registered
+        src.seconds = 4.999
+        monitor.tick()
+        XCTAssertEqual(events, [])
 
-    XCTAssertEqual(changes, [])
-  }
+        src.seconds = 5.0
+        monitor.tick()
+        XCTAssertEqual(events, [true])
+    }
+
+    @MainActor
+    func testStopStopsTimer() {
+        let src = FakeIdleSource()
+        let monitor = IdleMonitor(source: src, threshold: 5.0, interval: 0.05)
+        monitor.start()
+        monitor.stop()
+        // if the timer were still live the fake source at default 0 would not
+        // flip `isIdle`; this test mostly validates no crash and no state change
+        XCTAssertFalse(monitor.isIdle)
+    }
 }

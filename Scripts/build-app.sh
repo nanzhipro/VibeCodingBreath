@@ -1,51 +1,63 @@
 #!/usr/bin/env bash
-# Assemble a runnable .app from the SwiftPM executable + Bundle/Info.plist.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CONFIG="${1:-debug}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-CONFIG="${1:-debug}"
 APP_NAME="VibeCodingBreath"
-BUILD_DIR=".build/$CONFIG"
-APP_DIR="$BUILD_DIR/$APP_NAME.app"
+BUNDLE_ID="pro.nanzhi.VibeCodingBreath"
+BUNDLE_DIR="$ROOT/Bundle"
+INFO_PLIST="$BUNDLE_DIR/Info.plist"
+ICONSET="$BUNDLE_DIR/Resources/AppIcon.iconset"
 
-echo "==> swift build -c $CONFIG"
-swift build -c "$CONFIG"
-
-BIN_PATH="$BUILD_DIR/$APP_NAME"
-if [[ ! -x "$BIN_PATH" ]]; then
-  echo "executable not found at $BIN_PATH" >&2
-  exit 1
+if [[ "$CONFIG" != "debug" && "$CONFIG" != "release" ]]; then
+    echo "Usage: $0 [debug|release]" >&2
+    exit 2
 fi
 
-# Locate SwiftPM-emitted resource bundle (named "<pkg>_<target>.bundle")
-RES_BUNDLE=$(ls -d "$BUILD_DIR"/*VibeCodingBreath*.bundle 2>/dev/null | head -n 1 || true)
-
-echo "==> assembling $APP_DIR"
-rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
-cp "$BIN_PATH" "$APP_DIR/Contents/MacOS/$APP_NAME"
-cp "Bundle/Info.plist" "$APP_DIR/Contents/Info.plist"
-
-if [[ -d "Bundle/Resources" ]]; then
-  cp -R "Bundle/Resources"/. "$APP_DIR/Contents/Resources/"
+echo "[build-app] swift build ($CONFIG)"
+if [[ "$CONFIG" == "release" ]]; then
+    swift build -c release --arch arm64 --arch x86_64
+    BUILD_DIR="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
+else
+    swift build -c debug
+    BUILD_DIR="$(swift build -c debug --show-bin-path)"
 fi
 
-if [[ -n "$RES_BUNDLE" && -d "$RES_BUNDLE" ]]; then
-  # Copy the contents of the resource bundle into Contents/Resources
-  cp -R "$RES_BUNDLE"/* "$APP_DIR/Contents/Resources/" || true
-  # Also copy the bundle itself (SwiftPM Bundle.module needs it next to binary)
-  cp -R "$RES_BUNDLE" "$APP_DIR/Contents/MacOS/"
+APP_PATH="$BUILD_DIR/$APP_NAME.app"
+CONTENTS="$APP_PATH/Contents"
+MACOS="$CONTENTS/MacOS"
+RESOURCES="$CONTENTS/Resources"
+
+echo "[build-app] assembling app bundle at $APP_PATH"
+rm -rf "$APP_PATH"
+mkdir -p "$MACOS" "$RESOURCES"
+
+cp "$BUILD_DIR/$APP_NAME" "$MACOS/$APP_NAME"
+cp "$INFO_PLIST" "$CONTENTS/Info.plist"
+
+if [[ -d "$ICONSET" ]] && ls "$ICONSET"/*.png >/dev/null 2>&1; then
+    iconutil -c icns "$ICONSET" -o "$RESOURCES/AppIcon.icns"
+else
+    echo "[build-app] (note) no PNGs in $ICONSET; skipping AppIcon.icns"
 fi
 
-# Ad-hoc sign so Gatekeeper / TCC treats it as a stable identity.
-# Sign nested bundle first, then the app.
-if [[ -d "$APP_DIR/Contents/MacOS"/*VibeCodingBreath*.bundle ]] 2>/dev/null; then :; fi
-for nested in "$APP_DIR"/Contents/MacOS/*.bundle; do
-  [[ -e "$nested" ]] || continue
-  codesign --force --sign - --timestamp=none "$nested" >/dev/null
+# Copy SwiftPM-generated resource bundle(s) so NSLocalizedString + Bundle.module work.
+shopt -s nullglob
+for b in "$BUILD_DIR"/*.bundle; do
+    base="$(basename "$b")"
+    case "$base" in
+        *_"$APP_NAME".bundle | "$APP_NAME"_"$APP_NAME".bundle)
+            echo "[build-app] embedding resource bundle: $base"
+            rm -rf "$RESOURCES/$base"
+            cp -R "$b" "$RESOURCES/$base"
+            if [[ "$CONFIG" == "release" ]]; then
+                codesign --force --sign - "$RESOURCES/$base" || true
+            fi
+            ;;
+    esac
 done
-codesign --force --sign - --timestamp=none "$APP_DIR" >/dev/null
+shopt -u nullglob
 
-echo "==> built $APP_DIR"
+echo "[build-app] done -> $APP_PATH"

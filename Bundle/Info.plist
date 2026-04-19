@@ -8,31 +8,38 @@
     <string>VibeCodingBreath</string>
     <key>CFBundleIdentifier</key>
     <string>pro.nanzhi.VibeCodingBreath</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
     <key>CFBundleName</key>
     <string>VibeCodingBreath</string>
     <key>CFBundleDisplayName</key>
     <string>VibeCodingBreath</string>
     <key>CFBundleIconFile</key>
-    <string>AppIcon.icns</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>LSUIElement</key>
-    <true/>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
     <key>NSHumanReadableCopyright</key>
-    <string>© 2026 nanzhi. All rights reserved.</string>
+    <string>Copyright © 2026 nanzhi.pro. All rights reserved.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSSupportsAutomaticTermination</key>
     <false/>
     <key>NSSupportsSuddenTermination</key>
-    <false/>
+    <true/>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>zh-Hans</string>
+    </array>
 </dict>
 </plist>

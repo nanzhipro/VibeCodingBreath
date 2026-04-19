@@ -1,246 +1,46 @@
-# VibeCodingBreath PRD — macOS 正念呼吸辅助应用
+# VibeCodingBreath — Product Requirements
 
-> 版本：v0.1（初稿）
-> 状态：草案（Draft）
-> 适用平台：macOS 13 Ventura 及以上
-> 文档归属：`docs/PRD.md`
+## Problem
 
----
+While an AI coding agent is thinking, the user is often staring at a loader. Rather than context-switching to Twitter, the user should breathe. VibeCodingBreath fills those idle seconds with an invisible, never-intrusive mindfulness cue.
 
-## 1. 背景与机会
+## MVP Principles
 
-在 AI 协作编程（Vibe Coding）成为常态后，开发者与创作者把越来越多的"思考与执行"环节交给 AI（Copilot、Claude、Cursor、Codex 等）。一次推理、一次 agent 任务往往需要数十秒到数分钟。
+1. **Zero-touch.** No onboarding, no configuration UI, no notifications.
+2. **Zero-permission.** No Accessibility, no Screen Recording, no Notifications prompts — ever.
+3. **Zero-friction.** The halo only shows when the user is obviously waiting, and disappears at the slightest input.
+4. **One idea.** A soft breathing halo. No bars, no waveforms, no text labels, no audio.
 
-这段"AI 在工作、人在等待"的时间，存在一个普遍痛点：
+## User Experience
 
-- **人会分心**：刷手机、切到浏览器、跳到其他 IDE 标签，结果是上下文丢失、回到任务时需要重新热身。
-- **节奏被打断**：人脱离了与 AI 的协作循环（review → 修改 → 再发起），效率反而下降。
-- **缺乏一种"恰到好处"的占位行为**：传统冥想 App 太重，番茄钟太硬，都不适合"AI 跑一会儿、我等一会儿"的碎片场景。
+- App lives entirely in the macOS menu bar (`LSUIElement = true`).
+- Status-bar icon (template, light/dark adaptive) with a single two-item menu:
+  - **Open VibeCodingBreath** — manually force-show the halo, ignoring idle judgment, until the next user input.
+  - **Quit** — terminate cleanly.
+- While the user is idle at the desktop for ≥ 5 seconds, a soft breathing halo fades in (0.4 s) at the center of the main screen and drives a 4-2-6-2 inhale / hold / exhale / hold cycle.
+- Any mouse movement or keypress fades the halo out within 200 ms.
+- The halo is always click-through.
+- If the frontmost app is in true fullscreen (Keynote, video, etc.) the halo is suppressed entirely.
+- App auto-launches at login after first run (via `SMAppService.mainApp.register()`).
+- Only a single instance runs at a time.
 
-**机会**：把这段等待时间转化为一次微型的正念呼吸练习。让用户在等待 AI 的同时，留在屏幕前、留在当前任务上下文里，并顺带训练专注力与呼吸节奏。
+## Acceptance Criteria
 
-## 2. 产品定位
+- [ ] No Dock icon; status-bar template icon appears.
+- [ ] Status menu contains exactly two items, localized in the system language (zh-Hans / en).
+- [ ] 5 s of no input on the desktop → halo fades in at the center of the main screen with the 4-2-6-2 rhythm.
+- [ ] Any mouse move or key press fades the halo out within 200 ms.
+- [ ] The halo never intercepts clicks (Finder icons under it are clickable).
+- [ ] Frontmost fullscreen app suppresses the halo entirely.
+- [ ] After macOS reboot the app auto-launches into the menu bar.
+- [ ] Quit terminates the process and leaves nothing behind.
+- [ ] Idle CPU < 1%, resident memory < 80 MB.
+- [ ] No system permission prompts ever appear.
 
-一款**极简、近乎隐形**的 macOS 状态栏应用，在用户停止操作鼠标时，于屏幕中央显示一个跟随呼吸节奏缩放的呼吸灯，引导用户在等待 AI 时进行正念呼吸；用户一旦接管屏幕，呼吸灯立即消失，零打扰。
+## Non-Goals (MVP)
 
-一句话定位：
-
-> **"AI 在思考时，你在呼吸。"**
-
-## 3. 目标用户
-
-- 重度使用 AI 编码助手 / AI Agent 的开发者、创作者、研究者。
-- 希望在工作流中加入轻量正念练习，但不愿意打开独立冥想 App 的人群。
-- 偏好极简、零打扰、常驻菜单栏类工具的 macOS 用户。
-
-## 4. 设计原则
-
-1. **极简至上**：功能尽量少，UI 尽量轻，配置尽量无。
-2. **零打扰**：不抢焦点、不弹通知、不出现在 Dock、不阻塞输入。
-3. **顺势而为**：呼吸灯只在"用户没在操作"时出现，在"用户开始操作"时立即消失。
-4. **默认即正确**：开箱即用的呼吸节奏和视觉效果对绝大多数用户合适，配置项放到后续版本。
-5. **本地优先**：完全离线，不收集任何用户数据。
-
-## 5. 范围（Scope）
-
-### 5.1 MVP 范围（v1.0）
-
-- 状态栏常驻图标 + 极简菜单（打开 / 退出）。
-- 开机自启动。
-- 全局鼠标静止检测。
-- 屏幕中央呼吸灯（吸气—屏息—呼气—屏息 的固定节奏）。
-- 用户操作（鼠标移动 / 键盘输入）即时隐藏呼吸灯。
-- Dock 不显示图标（`LSUIElement = true`）。
-
-### 5.2 不在 MVP 范围（Out of Scope）
-
-- 多种呼吸节奏 / 自定义节奏。
-- 声音引导、震动、Haptic 反馈。
-- 与 AI 工具（Cursor / Copilot / Claude Code 等）的状态联动检测。
-- 数据统计、连续打卡、成就系统。
-- 多显示器细粒度策略配置（MVP 阶段先用合理默认值）。
-- iCloud 同步、账号体系。
-
-### 5.3 后续可能版本（v1.1+ 候选）
-
-- 呼吸节奏预设（4-7-8、Box Breathing、6 次/分钟 等）。
-- 主题与配色（暖色 / 冷色 / 跟随系统外观）。
-- 真正监听 AI 工具运行状态（如 Cursor / Claude Code 的 agent 进度）来主动触发，而不仅依赖鼠标静止。
-- 简单的"今日累计呼吸时长"统计（仅本地）。
-
-## 6. 用户故事
-
-- **US-1**：作为开发者，当我向 Cursor 发起一个长任务后，我希望屏幕中央自然出现一个呼吸引导，让我留在屏幕前进行呼吸，而不是切走刷手机。
-- **US-2**：作为用户，当我重新移动鼠标准备接手 AI 输出的代码时，我希望呼吸灯立即消失，不阻挡我的视线和点击。
-- **US-3**：作为用户，我希望这个 App 不出现在 Dock 里，只在状态栏有一个低调的小图标，需要时点开能"打开"或"退出"。
-- **US-4**：作为用户，重启电脑后我不需要手动启动它，它应该已经在状态栏里待命。
-- **US-5**：作为用户，我不希望它弹任何通知、弹窗、引导教程，第一次安装打开就能直接用。
-
-## 7. 功能需求（Functional Requirements）
-
-### 7.1 启动与常驻
-
-| 编号 | 需求 | 说明 |
-|---|---|---|
-| F-1.1 | 开机自启 | 通过 `SMAppService`（macOS 13+）注册 Login Item，默认开启。 |
-| F-1.2 | 无 Dock 图标 | `Info.plist` 设置 `LSUIElement = YES`，不出现在 Dock 与 Cmd+Tab 切换器。 |
-| F-1.3 | 状态栏图标 | 在系统菜单栏（NSStatusBar）显示一个模板图标（template image），自动适配深浅色模式。 |
-| F-1.4 | 单实例 | 同一时间仅允许一个 App 实例运行。 |
-
-### 7.2 状态栏菜单
-
-点击状态栏图标，弹出菜单，仅包含两项：
-
-| 编号 | 菜单项 | 行为 |
-|---|---|---|
-| F-2.1 | 打开 VibeCodingBreath | 立即在屏幕中央显示一次呼吸灯（手动触发，不依赖鼠标静止判断），并保持显示直到用户操作鼠标 / 键盘。 |
-| F-2.2 | 退出 | 完全退出应用进程。 |
-
-> 备注：MVP 不提供"设置"、"关于"、"反馈"等多余菜单项，保持极简。
-
-### 7.3 鼠标静止检测与呼吸灯触发
-
-| 编号 | 需求 | 说明 |
-|---|---|---|
-| F-3.1 | 静止判定 | 当**鼠标光标坐标** 在连续 `T_idle` 秒内无变化时，判定为"用户静止"。`T_idle` 默认 **5 秒**（MVP 内置常量）。 |
-| F-3.2 | 触发显示 | 进入静止状态后，立即在主屏幕中央以淡入动画显示呼吸灯。 |
-| F-3.3 | 中断隐藏 | 一旦检测到鼠标移动 或 任意键盘输入，立即以淡出动画隐藏呼吸灯（淡出时长 ≤ 200ms）。 |
-| F-3.4 | 检测机制 | 使用 `CGEventSource.secondsSinceLastEventType` 轮询（建议 0.5s 间隔）检测鼠标移动和键盘事件，避免申请辅助功能权限。 |
-| F-3.5 | 全屏 / 演示模式 | 当前台 App 处于全屏（如视频播放、Keynote 演示）时，**不显示**呼吸灯，避免干扰。 |
-| F-3.6 | 多显示器 | MVP 仅在**主显示器**（含菜单栏的屏幕）中央显示。 |
-
-### 7.4 呼吸灯视觉与节奏
-
-| 编号 | 需求 | 说明 |
-|---|---|---|
-| F-4.1 | 形态 | 一个柔和发光的圆形光晕（径向渐变 + 模糊），中心稍亮、边缘羽化。 |
-| F-4.2 | 颜色 | 默认柔和青蓝色（参考 `#7FB3D5` 周围），低饱和度，避免刺眼；自动随系统深浅色模式微调亮度。 |
-| F-4.3 | 节奏 | 默认采用 **4-2-6-2** 节奏（单位：秒）：吸气 4s → 屏息 2s → 呼气 6s → 屏息 2s，单循环 14s。 |
-| F-4.4 | 缩放范围 | 最小直径约 120pt，最大直径约 320pt（按主屏分辨率自适应，最大不超过屏幕短边的 25%）。 |
-| F-4.5 | 缓动 | 吸气与呼气阶段使用 `easeInOut`，屏息阶段保持当前大小；整体使用 Core Animation，60fps。 |
-| F-4.6 | 文案提示（可选，默认开） | 在光晕下方显示极小号灰色文字提示："吸气 / 屏息 / 呼气 / 屏息"，中文随系统语言切换为英文 "Inhale / Hold / Exhale / Hold"。 |
-| F-4.7 | 透明覆盖窗口 | 使用置顶、透明、`ignoresMouseEvents = true` 的 NSWindow / NSPanel，不抢焦点、不阻挡点击。 |
-| F-4.8 | 不阻塞输入 | 呼吸灯所在窗口对所有鼠标 / 键盘事件透明（点击穿透）。 |
-
-### 7.5 退出
-
-| 编号 | 需求 | 说明 |
-|---|---|---|
-| F-5.1 | 菜单退出 | 状态栏菜单的"退出"项立即终止进程。 |
-| F-5.2 | 退出无残留 | 退出后不留窗口、不保留呼吸灯覆盖层。 |
-
-## 8. 非功能需求（Non-Functional Requirements）
-
-| 类别 | 要求 |
-|---|---|
-| 性能 | 空闲态 CPU 占用 < 1%，呼吸灯渲染时 < 3%；常驻内存 < 80MB。 |
-| 续航 | 检测循环使用低频轮询（≥ 0.5s），避免高频 Run Loop 唤醒；呼吸灯隐藏时停止动画时钟。 |
-| 权限 | 不申请辅助功能（Accessibility）、不申请屏幕录制、不申请通知；仅可能需要"登录项"权限以实现自启。 |
-| 隐私 | 完全本地运行，不联网，不上报任何数据，无第三方 SDK。 |
-| 兼容性 | macOS 13 Ventura 及以上；同时支持 Apple Silicon 与 Intel（Universal Binary）。 |
-| 可访问性 | 呼吸灯文案支持 VoiceOver（可关）；颜色对比度满足 WCAG AA。 |
-| 国际化 | MVP 内置：简体中文、英文，按系统语言自动切换。 |
-| 安装包 | 通过 `.dmg` 或 `.app` 直接发布；签名 + 公证（notarized），避免 Gatekeeper 警告。 |
-
-## 9. 技术方案建议（Implementation Notes）
-
-> 非强制约束，仅作为实现起点。
-
-- **语言 / 框架**：Swift 5.9+，SwiftUI（菜单与呼吸灯视图） + AppKit（NSStatusItem、NSWindow、CGEvent）。
-- **常驻模式**：`Info.plist` 中设置：
-  - `LSUIElement = true`
-  - `LSMinimumSystemVersion = 13.0`
-- **登录项自启**：使用 `SMAppService.mainApp.register()`，避免老式 helper bundle 方案。
-- **状态栏**：`NSStatusBar.system.statusItem(withLength: .variable)` + `NSMenu` 两项菜单。
-- **鼠标 / 键盘静止检测**：
-  - `CGEventSource(stateID: .combinedSessionState).secondsSinceLastEventType(.mouseMoved / .keyDown / .leftMouseDown ...)`，每 0.5s 轮询一次。
-  - 优先使用此 API，不需要辅助功能权限。
-- **呼吸灯窗口**：
-  - `NSPanel`，`styleMask = [.borderless, .nonactivatingPanel]`
-  - `level = .statusBar`，`isOpaque = false`，`backgroundColor = .clear`
-  - `ignoresMouseEvents = true`
-  - `collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]`
-- **动画**：SwiftUI `withAnimation(.easeInOut(duration: phase.duration))` 驱动 scale 与 opacity；或 Core Animation `CABasicAnimation`。
-- **全屏检测**：观察 `NSWorkspace.shared.frontmostApplication` 与 `NSApplication.didChangeScreenParametersNotification`，前台应用进入全屏时跳过显示。
-
-## 10. 交互流程（关键流）
-
-### 10.1 启动流
-
-1. 系统登录 → macOS 自动启动 App（无窗口、无 Dock 图标）。
-2. App 在状态栏注册图标，启动鼠标静止检测循环。
-3. 进入待机：根据鼠标静止状态决定是否显示呼吸灯。
-
-### 10.2 呼吸灯生命周期
-
-```
-用户操作中  ──(鼠标静止 ≥ 5s)──▶  淡入显示呼吸灯  ──(任意操作)──▶  淡出隐藏  ──▶  回到等待
-```
-
-### 10.3 手动触发流
-
-1. 用户点击状态栏图标 → 弹出菜单。
-2. 选择"打开 VibeCodingBreath" → 强制显示一次呼吸灯（忽略静止判定）。
-3. 一旦检测到鼠标 / 键盘事件，恢复自动模式。
-
-### 10.4 退出流
-
-1. 用户点击状态栏图标 → 选择"退出"。
-2. 注销事件循环、关闭呼吸灯窗口、移除状态栏图标、终止进程。
-
-## 11. 默认参数（MVP 内置常量）
-
-| 参数 | 默认值 | 备注 |
-|---|---|---|
-| 鼠标静止阈值 `T_idle` | 5 秒 | |
-| 呼吸节奏 | 4-2-6-2 秒 | 吸-屏-呼-屏 |
-| 呼吸灯最小直径 | 120 pt | |
-| 呼吸灯最大直径 | 320 pt | 上限：主屏短边 × 25% |
-| 呼吸灯主色 | `#7FB3D5`（约） | 浅色/深色模式下亮度自适应 |
-| 淡入时长 | 400 ms | |
-| 淡出时长 | 200 ms | |
-| 静止检测轮询间隔 | 500 ms | |
-
-## 12. 验收标准（Acceptance Criteria）
-
-- [ ] App 启动后，Dock 中**不**出现图标；菜单栏出现一个模板图标。
-- [ ] 点击菜单栏图标，弹出菜单**仅**包含"打开 VibeCodingBreath"和"退出"。
-- [ ] 在桌面无操作 5 秒内，主屏幕中央出现呼吸灯并以 4-2-6-2 节奏循环缩放。
-- [ ] 呼吸灯出现期间，任意鼠标移动或键盘按键都能在 200ms 内让其消失。
-- [ ] 呼吸灯所在区域**不**拦截鼠标点击（点击可穿透到下层应用）。
-- [ ] 前台应用进入全屏视频/演示时，呼吸灯不会出现。
-- [ ] 重启 macOS 后，App 自动随系统启动并出现在菜单栏。
-- [ ] 选择"退出"后，进程立即结束，菜单栏图标消失。
-- [ ] 空闲态 CPU < 1%，常驻内存 < 80MB。
-- [ ] 不触发任何系统权限弹窗（辅助功能 / 屏幕录制 / 通知）。
-
-## 13. 风险与对策
-
-| 风险 | 影响 | 对策 |
-|---|---|---|
-| 鼠标静止 ≠ AI 在工作 | 用户在阅读 / 思考时也会触发呼吸灯，可能被打扰 | MVP 接受此误差；呼吸灯本身轻量、可被一次微操作即时取消；后续版本接入真正的 AI 状态检测。 |
-| 呼吸灯遮挡阅读 | 用户阅读长文时不动鼠标，被光晕分散注意力 | 1) 透明度较低、2) 点击穿透、3) 任意输入即消失；后续可加"专注阅读"识别。 |
-| 全屏游戏 / 视频被干扰 | 体验破坏 | F-3.5：全屏前台 App 时不显示。 |
-| Login Item 注册被系统拦截 | 自启失败 | 使用 `SMAppService` 标准 API；首次失败时下次启动重试（不弹窗打扰）。 |
-| 多显示器布局变化 | 呼吸灯位置异常 | MVP 固定主屏；监听 `NSApplication.didChangeScreenParametersNotification` 重新计算位置。 |
-
-## 14. 里程碑（建议）
-
-| 里程碑 | 内容 |
-|---|---|
-| M1 — 骨架 | 状态栏图标 + 菜单 + 自启 + `LSUIElement` 配置可用。 |
-| M2 — 检测 | 鼠标 / 键盘静止检测稳定运行，日志可观测。 |
-| M3 — 呼吸灯 | 透明置顶窗口 + SwiftUI 呼吸动画 + 节奏正确。 |
-| M4 — 联调 | 静止触发 / 操作中断 / 全屏屏蔽 / 多屏处理 全链路打通。 |
-| M5 — 打磨与发布 | 性能、签名公证、DMG、README、首个 Release。 |
-
-## 15. 开放问题（Open Questions）
-
-1. 呼吸节奏是否要随版本提供 1~2 个预设切换（如 4-7-8）？— 倾向 v1.1。
-2. 是否需要在状态栏图标上用极小的指示符（如圆点呼吸动画）来体现"App 正在引导呼吸中"？— 待评估，可能增加噪音。
-3. 是否需要在 macOS Sonoma 的"专注模式"下自动暂停？— 可选，留待 v1.1。
-4. 是否在每次呼吸灯出现/消失记录一次本地匿名计数，用于"今日累计呼吸时长"？— v1.1 候选，需要明确隐私边界。
-
----
-
-> 本 PRD 为 v0.1 草案，后续如有新增需求或决策，请在对应章节追加修订记录，并在文档顶部更新版本号与状态。
+- No history, streaks, stats, or persistence of any kind.
+- No audio, haptics, or system notifications.
+- No per-display/per-Space configuration UI.
+- No integration with Claude Code / Cursor / Copilot signals — this release uses only idle time as a proxy for "AI is thinking".
+- No support for macOS < 14.

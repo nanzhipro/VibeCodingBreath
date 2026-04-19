@@ -1,109 +1,120 @@
 import AppKit
 
-/// Single source of truth that wires monitors → decision → overlay.
 @MainActor
 final class AppCoordinator {
-  private let idleMonitor: IdleMonitor
-  private let contextMonitor: ForegroundContextProviding
-  private let overlay: OverlayPresenting
-  private let loginItem: LoginItemControlling
-  private let installsStatusItem: Bool
+    enum State { case hidden, showing, dismissing }
 
-  private var statusItem: StatusItemController?
-  private var manualOverride: Bool = false
-  private var sleepObserver: NSObjectProtocol?
+    private let statusItem: StatusItemControlling
+    private let idleMonitor: IdleProviding
+    private let fgMonitor: ForegroundContextProviding
+    private let overlay: OverlayControlling
+    private let loginItem: LoginItemManager
 
-  init(
-    idleMonitor: IdleMonitor = IdleMonitor(),
-    contextMonitor: ForegroundContextProviding = ForegroundContextMonitor(),
-    overlay: OverlayPresenting? = nil,
-    loginItem: LoginItemControlling = LoginItemManager(),
-    installsStatusItem: Bool = true
-  ) {
-    self.idleMonitor = idleMonitor
-    self.contextMonitor = contextMonitor
-    self.overlay = overlay ?? OverlayWindowController()
-    self.loginItem = loginItem
-    self.installsStatusItem = installsStatusItem
-  }
+    private(set) var state: State = .hidden
+    private(set) var isIdle: Bool = false
+    private(set) var isFullscreen: Bool = false
+    private(set) var manualOverride: Bool = false
 
-  func start() {
-    Log.app.info("coordinator start")
-    loginItem.enableIfNeeded()
-
-    if installsStatusItem {
-      statusItem = StatusItemController(
-        onOpen: { [weak self] in self?.openManually() },
-        onQuit: { [weak self] in self?.requestQuit() }
-      )
+    init(statusItem: StatusItemControlling,
+         idleMonitor: IdleProviding,
+         fgMonitor: ForegroundContextProviding,
+         overlay: OverlayControlling,
+         loginItem: LoginItemManager = LoginItemManager()) {
+        self.statusItem = statusItem
+        self.idleMonitor = idleMonitor
+        self.fgMonitor = fgMonitor
+        self.overlay = overlay
+        self.loginItem = loginItem
     }
 
-    idleMonitor.onChange = { [weak self] isIdle in
-      guard let self else { return }
-      if !isIdle && self.manualOverride {
-        self.manualOverride = false
-        Log.app.debug("manual override cleared by activity")
-      }
-      self.evaluate()
-    }
-    idleMonitor.start()
-
-    contextMonitor.onChange = { [weak self] _ in self?.evaluate() }
-    contextMonitor.start()
-
-    let center = NSWorkspace.shared.notificationCenter
-    sleepObserver = center.addObserver(
-      forName: NSWorkspace.willSleepNotification,
-      object: nil,
-      queue: .main
-    ) { [weak self] _ in
-      MainActor.assumeIsolated { self?.handleSleep() }
+    static func makeDefault() -> AppCoordinator {
+        let engine = BreathingEngine()
+        return AppCoordinator(
+            statusItem: StatusItemController(),
+            idleMonitor: IdleMonitor(),
+            fgMonitor: ForegroundContextMonitor(),
+            overlay: OverlayWindowController(engine: engine)
+        )
     }
 
-    evaluate()
-  }
+    func start() {
+        loginItem.registerIfNeeded()
+        statusItem.install()
+        statusItem.onOpen = { [weak self] in self?.openManually() }
+        statusItem.onQuit = { NSApp.terminate(nil) }
 
-  func stop() {
-    Log.app.info("coordinator stop")
-    idleMonitor.stop()
-    contextMonitor.stop()
-    overlay.hide()
-    statusItem?.remove()
-    statusItem = nil
-    if let token = sleepObserver {
-      NSWorkspace.shared.notificationCenter.removeObserver(token)
+        idleMonitor.onChange = { [weak self] idle in
+            self?.handleIdle(idle)
+        }
+        fgMonitor.onChange = { [weak self] fs in
+            self?.handleFullscreen(fs)
+        }
+
+        idleMonitor.start()
+        fgMonitor.start()
+
+        isIdle = idleMonitor.isIdle
+        isFullscreen = fgMonitor.isFullscreenContext
+        evaluate()
     }
-    sleepObserver = nil
-  }
 
-  func openManually() {
-    manualOverride = true
-    evaluate()
-  }
-
-  func requestQuit() {
-    NSApp.terminate(nil)
-  }
-
-  func evaluate() {
-    let idle = idleMonitor.isIdle
-    let fullscreen = contextMonitor.isFullscreenContext
-
-    let shouldShow = !fullscreen && (manualOverride || idle)
-    Log.app.debug(
-      "evaluate idle=\(idle, privacy: .public) fs=\(fullscreen, privacy: .public) override=\(self.manualOverride, privacy: .public) -> show=\(shouldShow, privacy: .public)"
-    )
-
-    if shouldShow {
-      overlay.show()
-    } else {
-      overlay.hide()
+    func stop() {
+        idleMonitor.stop()
+        fgMonitor.stop()
+        overlay.cleanup()
+        statusItem.uninstall()
     }
-  }
 
-  private func handleSleep() {
-    Log.app.info("system sleeping; hiding overlay")
-    manualOverride = false
-    overlay.hide()
-  }
+    func openManually() {
+        guard !isFullscreen else {
+            AppLogger.app.info("Manual open ignored: fullscreen context.")
+            return
+        }
+        manualOverride = true
+        evaluate()
+    }
+
+    func handleSleep() {
+        if state == .showing {
+            overlay.hide()
+            state = .hidden
+        }
+    }
+
+    func handleWake() {
+        evaluate()
+    }
+
+    func handleIdle(_ idle: Bool) {
+        isIdle = idle
+        if !idle {
+            manualOverride = false
+        }
+        evaluate()
+    }
+
+    func handleFullscreen(_ fs: Bool) {
+        isFullscreen = fs
+        evaluate()
+    }
+
+    func shouldShow() -> Bool {
+        if isFullscreen { return false }
+        return isIdle || manualOverride
+    }
+
+    func evaluate() {
+        if shouldShow() {
+            if state != .showing {
+                overlay.show()
+                state = .showing
+            }
+        } else {
+            if state == .showing {
+                state = .dismissing
+                overlay.hide()
+                state = .hidden
+            }
+        }
+    }
 }

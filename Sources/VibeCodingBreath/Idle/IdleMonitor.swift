@@ -1,90 +1,72 @@
-import CoreGraphics
 import Foundation
+import CoreGraphics
 
-/// Real provider that reads inactivity from CoreGraphics. Available without Accessibility permission.
-final class CGEventInactivityProvider: EventInactivityProvider {
-  private let trackedTypes: [CGEventType] = [
-    .mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown,
-    .leftMouseDragged, .rightMouseDragged, .scrollWheel,
-    .keyDown, .flagsChanged,
-  ]
+struct CGEventIdleTimeSource: IdleTimeSource {
+    static let watchedEvents: [CGEventType] = [
+        .mouseMoved,
+        .leftMouseDown,
+        .rightMouseDown,
+        .otherMouseDown,
+        .leftMouseDragged,
+        .rightMouseDragged,
+        .scrollWheel,
+        .keyDown,
+        .flagsChanged
+    ]
 
-  func secondsSinceLastUserEvent() -> TimeInterval {
-    var minSeconds: TimeInterval = .infinity
-    for type in trackedTypes {
-      let value = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: type)
-      if value < minSeconds { minSeconds = value }
+    func secondsSinceLastEvent() -> TimeInterval {
+        let values = Self.watchedEvents.map { evt in
+            CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: evt)
+        }
+        return values.min() ?? .greatestFiniteMagnitude
     }
-    return minSeconds
-  }
 }
 
-/// Production scheduler driven by a DispatchSourceTimer on the main queue.
-final class DispatchTickScheduler: TickScheduler {
-  private var timer: DispatchSourceTimer?
-
-  func start(interval: TimeInterval, _ tick: @escaping @MainActor () -> Void) {
-    stop()
-    let t = DispatchSource.makeTimerSource(queue: .main)
-    t.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(50))
-    t.setEventHandler {
-      // We are on the main queue; promote to MainActor.
-      MainActor.assumeIsolated {
-        tick()
-      }
-    }
-    t.resume()
-    timer = t
-  }
-
-  func stop() {
-    timer?.cancel()
-    timer = nil
-  }
-}
-
-/// Polls inactivity and fires a callback whenever the idle/active state flips.
 @MainActor
-final class IdleMonitor {
-  private(set) var isIdle: Bool = false
-  var onChange: ((Bool) -> Void)?
+final class IdleMonitor: IdleProviding {
+    private let source: IdleTimeSource
+    private let threshold: TimeInterval
+    private let interval: TimeInterval
+    private var pollTask: Task<Void, Never>?
 
-  private let provider: EventInactivityProvider
-  private let scheduler: TickScheduler
-  private let threshold: TimeInterval
-  private let pollInterval: TimeInterval
+    private(set) var isIdle: Bool = false
+    var onChange: ((Bool) -> Void)?
 
-  init(
-    provider: EventInactivityProvider = CGEventInactivityProvider(),
-    scheduler: TickScheduler = DispatchTickScheduler(),
-    threshold: TimeInterval = Constants.idleThreshold,
-    pollInterval: TimeInterval = Constants.pollInterval
-  ) {
-    self.provider = provider
-    self.scheduler = scheduler
-    self.threshold = threshold
-    self.pollInterval = pollInterval
-  }
-
-  func start() {
-    scheduler.start(interval: pollInterval) { [weak self] in
-      self?.tick()
+    init(source: IdleTimeSource = CGEventIdleTimeSource(),
+         threshold: TimeInterval = Constants.idleThreshold,
+         interval: TimeInterval = Constants.pollInterval) {
+        self.source = source
+        self.threshold = threshold
+        self.interval = interval
     }
-  }
 
-  func stop() {
-    scheduler.stop()
-  }
-
-  /// Public for tests: evaluate one cycle.
-  func tick() {
-    let seconds = provider.secondsSinceLastUserEvent()
-    let nowIdle = seconds >= threshold
-    if nowIdle != isIdle {
-      isIdle = nowIdle
-      Log.idle.debug(
-        "state changed -> \(nowIdle ? "idle" : "active") (\(seconds, privacy: .public)s)")
-      onChange?(nowIdle)
+    func start() {
+        guard pollTask == nil else { return }
+        let interval = self.interval
+        pollTask = Task { @MainActor [weak self] in
+            self?.tick()
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(interval))
+                } catch {
+                    return
+                }
+                self?.tick()
+            }
+        }
     }
-  }
+
+    func stop() {
+        pollTask?.cancel()
+        pollTask = nil
+    }
+
+    func tick() {
+        let seconds = source.secondsSinceLastEvent()
+        let newIdle = seconds >= threshold
+        guard newIdle != isIdle else { return }
+        isIdle = newIdle
+        AppLogger.idle.debug("idle edge -> \(newIdle ? "idle" : "active", privacy: .public)")
+        onChange?(newIdle)
+    }
 }

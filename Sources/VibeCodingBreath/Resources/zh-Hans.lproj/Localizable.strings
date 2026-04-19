@@ -1,5 +1,6 @@
-"status.menu.open" = "打开呼吸";
+"status.menu.open" = "打开 VibeCodingBreath";
 "status.menu.quit" = "退出";
-"breath.phase.inhale" = "吸气";
-"breath.phase.hold" = "屏息";
-"breath.phase.exhale" = "呼气";
+"phase.inhale" = "吸气";
+"phase.hold.afterInhale" = "屏息";
+"phase.exhale" = "呼气";
+"phase.hold.afterExhale" = "屏息";

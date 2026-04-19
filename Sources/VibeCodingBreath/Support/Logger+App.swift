@@ -1,13 +1,10 @@
-import Foundation
 import os
 
-/// Shared loggers, partitioned by category for filtering in Console.app.
-enum Log {
-  private static let subsystem = Constants.bundleIdentifier
-  static var app: Logger { Logger(subsystem: subsystem, category: "app") }
-  static var idle: Logger { Logger(subsystem: subsystem, category: "idle") }
-  static var overlay: Logger { Logger(subsystem: subsystem, category: "overlay") }
-  static var status: Logger { Logger(subsystem: subsystem, category: "status") }
-  static var login: Logger { Logger(subsystem: subsystem, category: "login") }
-  static var context: Logger { Logger(subsystem: subsystem, category: "context") }
+enum AppLogger {
+    nonisolated(unsafe) static let subsystem: String = Constants.bundleIdentifier
+    nonisolated(unsafe) static let app = Logger(subsystem: subsystem, category: "app")
+    nonisolated(unsafe) static let idle = Logger(subsystem: subsystem, category: "idle")
+    nonisolated(unsafe) static let overlay = Logger(subsystem: subsystem, category: "overlay")
+    nonisolated(unsafe) static let status = Logger(subsystem: subsystem, category: "status")
+    nonisolated(unsafe) static let login = Logger(subsystem: subsystem, category: "login")
 }

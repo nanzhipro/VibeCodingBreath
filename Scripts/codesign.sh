@@ -1,59 +1,49 @@
 #!/usr/bin/env bash
-# Codesign the assembled .app with a Developer ID identity.
-# Usage:
-#   Scripts/codesign.sh [debug|release] --identity "Developer ID Application: <Name> (TEAMID)"
-#   CODESIGN_IDENTITY=... Scripts/codesign.sh [debug|release]
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-CONFIG="release"
-IDENTITY="${CODESIGN_IDENTITY:-}"
+APP_NAME="VibeCodingBreath"
+ENTITLEMENTS="$ROOT/Bundle/VibeCodingBreath.entitlements"
 
-# Backwards-compat positional args: [config] [identity]
-POSITIONAL=()
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --identity) IDENTITY="$2"; shift 2 ;;
-    -h|--help)  sed -n '2,7p' "$0"; exit 0 ;;
-    *)          POSITIONAL+=("$1"); shift ;;
-  esac
+APP_PATH="${1:-}"
+IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application}"
+PROFILE="${NOTARY_PROFILE:-}"
+
+if [[ -z "$APP_PATH" ]]; then
+    APP_PATH="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/$APP_NAME.app"
+fi
+
+if [[ ! -d "$APP_PATH" ]]; then
+    echo "codesign.sh: app bundle not found at $APP_PATH" >&2
+    exit 1
+fi
+
+echo "[codesign] signing embedded bundles in $APP_PATH"
+shopt -s nullglob
+for b in "$APP_PATH/Contents/Resources"/*.bundle; do
+    codesign --force --options runtime --timestamp --sign "$IDENTITY" "$b"
 done
-[[ ${#POSITIONAL[@]} -ge 1 ]] && CONFIG="${POSITIONAL[0]}"
-[[ ${#POSITIONAL[@]} -ge 2 && -z "$IDENTITY" ]] && IDENTITY="${POSITIONAL[1]}"
+shopt -u nullglob
 
-APP_DIR=".build/$CONFIG/VibeCodingBreath.app"
-ENTITLEMENTS="Bundle/VibeCodingBreath.entitlements"
+echo "[codesign] signing app bundle"
+codesign --force --deep --options runtime --timestamp \
+    --entitlements "$ENTITLEMENTS" \
+    --sign "$IDENTITY" \
+    "$APP_PATH"
 
-if [[ -z "$IDENTITY" ]]; then
-  echo "error: codesign identity not provided. Use --identity \"...\" or set CODESIGN_IDENTITY env." >&2
-  exit 2
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+if [[ -n "$PROFILE" ]]; then
+    echo "[codesign] notarizing via keychain profile: $PROFILE"
+    ZIP="$APP_PATH.zip"
+    rm -f "$ZIP"
+    ditto -c -k --keepParent "$APP_PATH" "$ZIP"
+    xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait
+    rm -f "$ZIP"
+    xcrun stapler staple "$APP_PATH"
+    xcrun stapler validate "$APP_PATH"
+else
+    echo "[codesign] NOTARY_PROFILE not set; skipping notarization"
 fi
-
-if [[ ! -d "$APP_DIR" ]]; then
-  echo "App not found at $APP_DIR — run Scripts/build-app.sh $CONFIG first" >&2
-  exit 1
-fi
-
-if [[ ! -f "$ENTITLEMENTS" ]]; then
-  echo "Missing $ENTITLEMENTS" >&2
-  exit 1
-fi
-
-echo "==> signing nested bundles"
-for nested in "$APP_DIR"/Contents/MacOS/*.bundle; do
-  [[ -e "$nested" ]] || continue
-  codesign --force --options runtime --timestamp \
-    --sign "$IDENTITY" "$nested"
-done
-
-echo "==> signing $APP_DIR"
-codesign --force --options runtime --timestamp \
-  --entitlements "$ENTITLEMENTS" \
-  --sign "$IDENTITY" "$APP_DIR"
-
-echo "==> verifying"
-codesign --verify --deep --strict --verbose=2 "$APP_DIR"
-codesign -dv --verbose=2 "$APP_DIR" 2>&1 | grep -E "Authority|TeamIdentifier|Identifier|Signature"
-echo "==> done"

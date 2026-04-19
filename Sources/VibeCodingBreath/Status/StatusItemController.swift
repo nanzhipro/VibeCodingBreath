@@ -1,70 +1,57 @@
 import AppKit
 
-/// Builds the menu-bar status item with the two-action menu specified by PRD §F-2.
 @MainActor
-final class StatusItemController {
-  private let statusItem: NSStatusItem
-  private let onOpen: () -> Void
-  private let onQuit: () -> Void
+final class StatusItemController: NSObject, StatusItemControlling {
+    private var item: NSStatusItem?
+    var onOpen: (() -> Void)?
+    var onQuit: (() -> Void)?
 
-  init(onOpen: @escaping () -> Void, onQuit: @escaping () -> Void) {
-    self.onOpen = onOpen
-    self.onQuit = onQuit
-    self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    configureButton()
-    statusItem.menu = buildMenu()
-    Log.status.info("status item ready")
-  }
+    func install() {
+        let i = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = i.button {
+            let image = NSImage(systemSymbolName: "wind", accessibilityDescription: "VibeCodingBreath")
+            image?.isTemplate = true
+            button.image = image
+        }
 
-  deinit {
-    // statusItem retained by NSStatusBar; rely on remove() at app shutdown.
-  }
+        let menu = NSMenu()
 
-  func remove() {
-    NSStatusBar.system.removeStatusItem(statusItem)
-  }
+        let openTitle = NSLocalizedString(
+            "status.menu.open",
+            bundle: AppResources.bundle,
+            comment: "Manually show the breathing halo"
+        )
+        let openItem = NSMenuItem(title: openTitle, action: #selector(handleOpen), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
 
-  private func configureButton() {
-    guard let button = statusItem.button else { return }
-    let image =
-      NSImage(systemSymbolName: "wind", accessibilityDescription: Constants.appDisplayName)
-      ?? NSImage(
-        systemSymbolName: "circle.dotted", accessibilityDescription: Constants.appDisplayName)
-    image?.isTemplate = true
-    button.image = image
-    button.toolTip = Constants.appDisplayName
-  }
+        menu.addItem(.separator())
 
-  private func buildMenu() -> NSMenu {
-    let menu = NSMenu()
-    menu.autoenablesItems = false
+        let quitTitle = NSLocalizedString(
+            "status.menu.quit",
+            bundle: AppResources.bundle,
+            comment: "Quit VibeCodingBreath"
+        )
+        let quitItem = NSMenuItem(title: quitTitle, action: #selector(handleQuit), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
 
-    let openTitle = String(localized: "status.menu.open", bundle: .module)
-    let openItem = NSMenuItem(
-      title: openTitle, action: #selector(handleOpen(_:)), keyEquivalent: "")
-    openItem.target = self
-    openItem.isEnabled = true
-    menu.addItem(openItem)
+        i.menu = menu
+        item = i
+    }
 
-    menu.addItem(.separator())
+    func uninstall() {
+        if let i = item {
+            NSStatusBar.system.removeStatusItem(i)
+        }
+        item = nil
+    }
 
-    let quitTitle = String(localized: "status.menu.quit", bundle: .module)
-    let quitItem = NSMenuItem(
-      title: quitTitle, action: #selector(handleQuit(_:)), keyEquivalent: "q")
-    quitItem.target = self
-    quitItem.isEnabled = true
-    menu.addItem(quitItem)
+    @objc private func handleOpen() {
+        onOpen?()
+    }
 
-    return menu
-  }
-
-  @objc private func handleOpen(_ sender: Any?) {
-    Log.status.info("menu: open")
-    onOpen()
-  }
-
-  @objc private func handleQuit(_ sender: Any?) {
-    Log.status.info("menu: quit")
-    onQuit()
-  }
+    @objc private func handleQuit() {
+        onQuit?()
+    }
 }
